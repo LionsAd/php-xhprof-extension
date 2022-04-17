@@ -148,7 +148,7 @@ zend_always_inline static void tracing_enter_frame_callgraph(xhprof_record_t *cu
 
     current_frame = tracing_fast_alloc_frame(TSRMLS_C);
     current_frame->class_name = current_record->class_name;
-    current_frame->function_name = function_name;
+    current_frame->function_name = zend_string_copy(function_name);
     current_frame->previous_frame = TXRG(callgraph_frames);
     current_frame->recurse_level = 0;
     current_frame->wt_start = current_record->wt_start;
