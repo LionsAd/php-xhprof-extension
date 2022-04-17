@@ -63,8 +63,8 @@ void tracing_end(TSRMLS_D)
         TXRG(enabled) = 0;
         TXRG(callgraph_frames) = NULL;
         if (TXRG(records)) {
-            efree(TXRG(records));
-            TXRG(records) = NULL;
+         //   efree(TXRG(records));
+         //   TXRG(records) = NULL;
         }
 
         if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_ALLOC) {
@@ -268,9 +268,6 @@ void tracing_begin(zend_long flags TSRMLS_DC)
     TXRG(flags) = flags;
     TXRG(callgraph_frames) = NULL;
     TXRG(record_num) = 0;
-    TXRG(record_length) = 10000000;
-    TXRG(records) = NULL;
-    TXRG(records) = ecalloc(TXRG(record_length), sizeof(xhprof_record_t));
 
     for (i = 0; i < TIDEWAYS_XHPROF_CALLGRAPH_SLOTS; i++) {
         TXRG(callgraph_buckets)[i] = NULL;
@@ -297,6 +294,10 @@ void tracing_request_init(TSRMLS_D)
     TXRG(num_alloc) = 0;
     TXRG(num_free) = 0;
     TXRG(amount_alloc) = 0;
+
+    TXRG(record_length) = 10000000;
+    TXRG(records) = NULL;
+    TXRG(records) = ecalloc(TXRG(record_length), sizeof(xhprof_record_t));
 }
 
 void tracing_request_shutdown()

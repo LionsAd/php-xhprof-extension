@@ -99,6 +99,9 @@ static zend_always_inline zend_string* tracing_get_function_name(zend_execute_da
 
     return curr_func->common.function_name;
 }
+
+zend_always_inline static void tracing_stop_recording(TSRMLS_D);
+
 zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend_execute_data *execute_data TSRMLS_DC)
 {
     zend_string *function_name = (ret_symbol != NULL) ? ret_symbol : tracing_get_function_name(execute_data TSRMLS_CC);
@@ -106,6 +109,11 @@ zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend
 
     if (function_name == NULL || TXRG(records) == NULL) {
         return 0;
+    }
+
+    if (TXRG(record_num) == TXRG(record_length)) {
+        // @todo record the time taken for this.
+        tracing_stop_recording();
     }
 
     current_record = &(TXRG(records)[TXRG(record_num)]);
@@ -258,10 +266,9 @@ zend_always_inline static void tracing_exit_frame_callgraph(xhprof_record_t *exi
     tracing_fast_free_frame(current_frame TSRMLS_CC);
 }
 
-zend_always_inline static void tracing_exit_recording(TSRMLS_D)
+zend_always_inline static void tracing_stop_recording(TSRMLS_D)
 {
     uint64_t i = 0;
-    uint64_t depth = 0;
     xhprof_record_t *current_record;
 
     for (i = 0; i < TXRG(record_num); i++) {
@@ -269,21 +276,26 @@ zend_always_inline static void tracing_exit_recording(TSRMLS_D)
 
         if (current_record->function_name == TXRG(ret_symbol)) {
           tracing_exit_frame_callgraph(current_record, NULL TSRMLS_CC);
-          depth--;
           continue;
         }
         tracing_enter_frame_callgraph(current_record, NULL TSRMLS_CC);
-        depth++;
     }
+    TXRG(record_num) = 0;
+}
+
+zend_always_inline static void tracing_exit_recording(TSRMLS_D)
+{
+    xhprof_record_t *current_record;
+
+    // Stop recording
+    tracing_stop_recording();
 
     current_record = &(TXRG(records)[0]);
 
-    while (depth > 0) {
+    while (TXRG(callgraph_frames)) {
         TXRG(record_num) = 0;
         tracing_record_frame(TXRG(ret_symbol), NULL TSRMLS_CC);
-
         tracing_exit_frame_callgraph(current_record, NULL TSRMLS_CC);
-        depth--;
     }
 
     TXRG(record_num) = 0;
