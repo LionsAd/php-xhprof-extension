@@ -110,7 +110,7 @@ zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend
 
     current_record = &(TXRG(records)[TXRG(record_num)]);
     current_record->class_name = (ret_symbol == NULL) ? tracing_get_class_name(execute_data TSRMLS_CC) : NULL;
-    current_record->function_name = zend_string_copy(function_name);
+    current_record->function_name = function_name;
     current_record->wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
     TXRG(record_num)++;
     return 1;
