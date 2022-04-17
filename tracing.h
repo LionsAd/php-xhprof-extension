@@ -1,6 +1,7 @@
 #include "timer.h"
 
 #define TIDEWAYS_XHPROF_ROOT_SYMBOL "main()"
+#define TIDEWAYS_XHPROF_RET_SYMBOL  "tideways_xhprof_return()"
 #define TIDEWAYS_XHPROF_CALLGRAPH_COUNTER_SIZE 1024
 #define TIDEWAYS_XHPROF_CALLGRAPH_SLOTS 8192
 #define TIDEWAYS_XHPROF_FLAGS_CPU 1
@@ -98,40 +99,52 @@ static zend_always_inline zend_string* tracing_get_function_name(zend_execute_da
 
     return curr_func->common.function_name;
 }
-
-zend_always_inline static int tracing_enter_frame_callgraph(zend_string *root_symbol, zend_execute_data *execute_data TSRMLS_DC)
+zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend_execute_data *execute_data TSRMLS_DC)
 {
-    zend_string *function_name = (root_symbol != NULL) ? zend_string_copy(root_symbol) : tracing_get_function_name(execute_data TSRMLS_CC);
+    zend_string *function_name = (ret_symbol != NULL) ? ret_symbol : tracing_get_function_name(execute_data TSRMLS_CC);
+    xhprof_record_t *current_record;
+
+    if (function_name == NULL || TXRG(records) == NULL) {
+        return 0;
+    }
+
+    current_record = &(TXRG(records)[TXRG(record_num)]);
+    current_record->class_name = (ret_symbol == NULL) ? tracing_get_class_name(execute_data TSRMLS_CC) : NULL;
+    current_record->function_name = zend_string_copy(function_name);
+    current_record->wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
+    TXRG(record_num)++;
+    return 1;
+}
+
+zend_always_inline static void tracing_enter_frame_callgraph(xhprof_record_t *current_record, zend_execute_data *execute_data TSRMLS_DC)
+{
+    zend_string *function_name = current_record->function_name;
     xhprof_frame_t *current_frame;
     xhprof_frame_t *p;
     int recurse_level = 0;
 
-    if (function_name == NULL) {
-        return 0;
-    }
-
     current_frame = tracing_fast_alloc_frame(TSRMLS_C);
-    current_frame->class_name = (root_symbol == NULL) ? tracing_get_class_name(execute_data TSRMLS_CC) : NULL;
+    current_frame->class_name = current_record->class_name;
     current_frame->function_name = function_name;
     current_frame->previous_frame = TXRG(callgraph_frames);
     current_frame->recurse_level = 0;
-    current_frame->wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
+    current_frame->wt_start = current_record->wt_start;
 
     if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_CPU) {
-        current_frame->cpu_start = cpu_timer();
+        current_frame->cpu_start = current_record->cpu_start;
     }
 
     if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_PMU) {
-        current_frame->pmu_start = zend_memory_peak_usage(0 TSRMLS_CC);
+        current_frame->pmu_start = current_record->pmu_start;
     }
 
     if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_MU) {
-        current_frame->mu_start = zend_memory_usage(0 TSRMLS_CC);
+        current_frame->mu_start = current_record->mu_start;
     }
 
-    current_frame->num_alloc = TXRG(num_alloc);
-    current_frame->num_free = TXRG(num_free);
-    current_frame->amount_alloc = TXRG(amount_alloc);
+    current_frame->num_alloc = current_record->num_alloc;
+    current_frame->num_free = current_record->num_free;
+    current_frame->amount_alloc = current_record->amount_alloc;
 
     /* We only need to compute the hash for the function name,
      * that should be "good" enough, we sort into 1024 buckets only anyways */
@@ -153,15 +166,13 @@ zend_always_inline static int tracing_enter_frame_callgraph(zend_string *root_sy
 
     /* Init current function's recurse level */
     current_frame->recurse_level = recurse_level;
-
-    return 1;
 }
 
-zend_always_inline static void tracing_exit_frame_callgraph(TSRMLS_D)
+zend_always_inline static void tracing_exit_frame_callgraph(xhprof_record_t *exit_record, zend_execute_data *execute_data TSRMLS_DC)
 {
     xhprof_frame_t *current_frame = TXRG(callgraph_frames);
     xhprof_frame_t *previous = current_frame->previous_frame;
-    zend_long duration = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor)) - current_frame->wt_start;
+    zend_long duration = exit_record->wt_start - current_frame->wt_start;
 
     zend_ulong key = tracing_callgraph_bucket_key(current_frame);
     unsigned int slot = (unsigned int)key % TIDEWAYS_XHPROF_CALLGRAPH_SLOTS;
@@ -202,24 +213,55 @@ zend_always_inline static void tracing_exit_frame_callgraph(TSRMLS_D)
     bucket->count++;
     bucket->wall_time += duration;
 
-    bucket->num_alloc += TXRG(num_alloc) - current_frame->num_alloc;
-    bucket->num_free += TXRG(num_free) - current_frame->num_free;
-    bucket->amount_alloc += TXRG(amount_alloc) - current_frame->amount_alloc;
+    bucket->num_alloc += exit_record->num_alloc - current_frame->num_alloc;
+    bucket->num_free += exit_record->num_free - current_frame->num_free;
+    bucket->amount_alloc += exit_record->amount_alloc - current_frame->amount_alloc;
 
     if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_CPU) {
-        bucket->cpu_time += (cpu_timer() - current_frame->cpu_start);
+        bucket->cpu_time += (exit_record->cpu_start - current_frame->cpu_start);
     }
 
     if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_MU) {
-        bucket->memory += (zend_memory_usage(0 TSRMLS_CC) - current_frame->mu_start);
+        bucket->memory += (exit_record->mu_start - current_frame->mu_start);
     }
 
     if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_PMU) {
-        bucket->memory_peak += (zend_memory_peak_usage(0 TSRMLS_CC) - current_frame->pmu_start);
+        bucket->memory_peak += (exit_record->pmu_start - current_frame->pmu_start);
     }
 
     TXRG(function_hash_counters)[current_frame->hash_code]--;
 
     TXRG(callgraph_frames) = TXRG(callgraph_frames)->previous_frame;
     tracing_fast_free_frame(current_frame TSRMLS_CC);
+}
+
+zend_always_inline static void tracing_exit_recording(TSRMLS_D)
+{
+    uint64_t i = 0;
+    uint64_t depth = 0;
+    xhprof_record_t *current_record;
+
+    for (i = 0; i < TXRG(record_num); i++) {
+        current_record = &(TXRG(records)[i]);
+
+        if (current_record->function_name == TXRG(ret_symbol)) {
+          tracing_exit_frame_callgraph(current_record, NULL TSRMLS_CC);
+          depth--;
+          continue;
+        }
+        tracing_enter_frame_callgraph(current_record, NULL TSRMLS_CC);
+        depth++;
+    }
+
+    current_record = &(TXRG(records)[0]);
+
+    while (depth > 0) {
+        TXRG(record_num) = 0;
+        tracing_record_frame(TXRG(ret_symbol), NULL TSRMLS_CC);
+
+        tracing_exit_frame_callgraph(current_record, NULL TSRMLS_CC);
+        depth--;
+    }
+
+    TXRG(record_num) = 0;
 }

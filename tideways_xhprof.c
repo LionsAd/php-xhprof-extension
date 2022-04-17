@@ -32,7 +32,7 @@ static void tracer_observer_begin(zend_execute_data *ex) {
         return;
     }
 
-    tracing_enter_frame_callgraph(NULL, ex);
+    //tracing_enter_frame_callgraph(NULL, ex);
 }
 
 static void tracer_observer_end(zend_execute_data *ex, zval *return_value) {
@@ -41,7 +41,7 @@ static void tracer_observer_end(zend_execute_data *ex, zval *return_value) {
     }
 
     if (TXRG(callgraph_frames)) {
-        tracing_exit_frame_callgraph(TSRMLS_C);
+        //tracing_exit_frame_callgraph(TSRMLS_C);
     }
 }
 
@@ -67,12 +67,12 @@ void tideways_xhprof_execute_ex (zend_execute_data *execute_data) {
         return;
     }
 
-    is_profiling = tracing_enter_frame_callgraph(NULL, real_execute_data TSRMLS_CC);
+    is_profiling = tracing_record_frame(NULL, real_execute_data TSRMLS_CC);
 
     _zend_execute_ex(execute_data TSRMLS_CC);
 
-    if (is_profiling == 1 && TXRG(callgraph_frames)) {
-        tracing_exit_frame_callgraph(TSRMLS_C);
+    if (is_profiling == 1) {
+        tracing_record_frame(TXRG(ret_symbol), real_execute_data TSRMLS_CC);
     }
 }
 #endif
@@ -235,7 +235,7 @@ ZEND_DLEXPORT void tideways_xhprof_execute_internal(zend_execute_data *execute_d
         return;
     }
 
-    is_profiling = tracing_enter_frame_callgraph(NULL, execute_data TSRMLS_CC);
+    is_profiling = tracing_record_frame(NULL, execute_data TSRMLS_CC);
 
     if (!_zend_execute_internal) {
         execute_internal(execute_data, return_value TSRMLS_CC);
@@ -243,8 +243,8 @@ ZEND_DLEXPORT void tideways_xhprof_execute_internal(zend_execute_data *execute_d
         _zend_execute_internal(execute_data, return_value TSRMLS_CC);
     }
 
-    if (is_profiling == 1 && TXRG(callgraph_frames)) {
-        tracing_exit_frame_callgraph(TSRMLS_C);
+    if (is_profiling == 1) {
+        tracing_record_frame(TXRG(ret_symbol), execute_data TSRMLS_CC);
     }
 }
 

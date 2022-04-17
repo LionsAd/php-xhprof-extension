@@ -35,6 +35,7 @@ typedef unsigned long long uint64;
 #endif
 
 typedef struct xhprof_frame_t xhprof_frame_t;
+typedef struct xhprof_record_t xhprof_record_t;
 
 typedef struct xhprof_callgraph_bucket_t {
     zend_ulong key;
@@ -73,6 +74,17 @@ struct xhprof_frame_t {
     zend_ulong          hash_code;          /* hash_code for the function name  */
 };
 
+struct xhprof_record_t {
+    zend_string         *function_name;
+    zend_string         *class_name;
+    uint64              wt_start;           /* start value for wall clock timer */
+    uint64              cpu_start;         /* start value for CPU clock timer */
+    long int            mu_start;                    /* memory usage */
+    long int            pmu_start;              /* peak memory usage */
+    long int            num_alloc, num_free;
+    long int            amount_alloc;
+};
+
 ZEND_BEGIN_MODULE_GLOBALS(tideways_xhprof)
     int enabled;
     uint64 start_timestamp;
@@ -89,6 +101,11 @@ ZEND_BEGIN_MODULE_GLOBALS(tideways_xhprof)
     long int num_alloc;
     long int num_free;
     long int amount_alloc;
+
+    zend_string *ret_symbol;
+    uint64 record_num;
+    uint64 record_length;
+    xhprof_record_t *records;
 ZEND_END_MODULE_GLOBALS(tideways_xhprof)
 
 #if defined(__GNUC__) && __GNUC__ >= 4

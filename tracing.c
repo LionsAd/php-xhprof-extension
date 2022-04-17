@@ -41,23 +41,31 @@ void tracing_enter_root_frame(TSRMLS_D)
     TXRG(start_timestamp) = current_timestamp();
     TXRG(enabled) = 1;
     TXRG(root) = zend_string_init(TIDEWAYS_XHPROF_ROOT_SYMBOL, sizeof(TIDEWAYS_XHPROF_ROOT_SYMBOL)-1, 0);
+    TXRG(ret_symbol) = zend_string_init(TIDEWAYS_XHPROF_RET_SYMBOL, sizeof(TIDEWAYS_XHPROF_RET_SYMBOL)-1, 0);
 
-    tracing_enter_frame_callgraph(TXRG(root), NULL TSRMLS_CC);
+    tracing_record_frame(TXRG(root), NULL TSRMLS_CC);
 }
 
 void tracing_end(TSRMLS_D)
 {
     if (TXRG(enabled) == 1) {
+        if (TXRG(record_num) > 0) {
+            tracing_exit_recording(TSRMLS_C);
+        }
+
         if (TXRG(root)) {
             zend_string_release(TXRG(root));
         }
-
-        while (TXRG(callgraph_frames)) {
-            tracing_exit_frame_callgraph(TSRMLS_C);
+        if (TXRG(ret_symbol)) {
+            zend_string_release(TXRG(ret_symbol));
         }
 
         TXRG(enabled) = 0;
         TXRG(callgraph_frames) = NULL;
+        if (TXRG(records)) {
+            efree(TXRG(records));
+            TXRG(records) = NULL;
+        }
 
         if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_ALLOC) {
             zend_mm_heap *heap = zend_mm_get_heap();
@@ -259,6 +267,12 @@ void tracing_begin(zend_long flags TSRMLS_DC)
 
     TXRG(flags) = flags;
     TXRG(callgraph_frames) = NULL;
+    TXRG(record_num) = 0;
+    TXRG(record_length) = 10000000;
+    TXRG(records) = NULL;
+    TXRG(records) = ecalloc(TXRG(record_length), sizeof(xhprof_record_t));
+
+    printf("==== START\n");
 
     for (i = 0; i < TIDEWAYS_XHPROF_CALLGRAPH_SLOTS; i++) {
         TXRG(callgraph_buckets)[i] = NULL;
