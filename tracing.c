@@ -272,8 +272,6 @@ void tracing_begin(zend_long flags TSRMLS_DC)
     TXRG(records) = NULL;
     TXRG(records) = ecalloc(TXRG(record_length), sizeof(xhprof_record_t));
 
-    printf("==== START\n");
-
     for (i = 0; i < TIDEWAYS_XHPROF_CALLGRAPH_SLOTS; i++) {
         TXRG(callgraph_buckets)[i] = NULL;
     }
