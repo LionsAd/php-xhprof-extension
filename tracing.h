@@ -109,10 +109,33 @@ zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend
     }
 
     current_record = &(TXRG(records)[TXRG(record_num)]);
+    TXRG(record_num)++;
+
     current_record->class_name = (ret_symbol == NULL) ? tracing_get_class_name(execute_data TSRMLS_CC) : NULL;
     current_record->function_name = function_name;
     current_record->wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
-    TXRG(record_num)++;
+
+    // Optimize for no flags case.
+    if (TXRG(flags) == 0) {
+        return 1;
+    }
+
+    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_CPU) {
+        current_record->cpu_start = cpu_timer();
+    }
+
+    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_PMU) {
+        current_record->pmu_start = zend_memory_peak_usage(0 TSRMLS_CC);
+    }
+
+    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_MU) {
+        current_record->mu_start = zend_memory_usage(0 TSRMLS_CC);
+    }
+
+    current_record->num_alloc = TXRG(num_alloc);
+    current_record->num_free = TXRG(num_free);
+    current_record->amount_alloc = TXRG(amount_alloc);
+
     return 1;
 }
 
