@@ -112,8 +112,26 @@ zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend
     }
 
     if (TXRG(record_num) == TXRG(record_length)) {
+        xhprof_record_t start_record, stop_record;
+        current_record = &start_record;
         // @todo record the time taken for this.
+        current_record->wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
+
         tracing_stop_recording();
+
+        current_record = &stop_record;
+        current_record->wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
+
+        uint64_t overhead = (stop_record.wt_start - start_record.wt_start);
+        TXRG(profiler_overhead) += overhead;
+        //printf("Move: %lu mns, tot = %lu\n", overhead, TXRG(profiler_overhead));
+
+        // Adjust frames still on the callgraph.
+        xhprof_frame_t *current_frame = TXRG(callgraph_frames);
+        while (current_frame) {
+          current_frame->wt_start += overhead;
+          current_frame = current_frame->previous_frame;
+        }
     }
 
     current_record = &(TXRG(records)[TXRG(record_num)]);
@@ -279,6 +297,8 @@ zend_always_inline static void tracing_exit_recording(TSRMLS_D)
     while (TXRG(callgraph_frames)) {
         TXRG(record_num) = 0;
         tracing_record_frame(TXRG(ret_symbol), NULL TSRMLS_CC);
+        // The profiler overhead is always visible in main and the disable function.
+        current_record->wt_start += TXRG(profiler_overhead);
         tracing_exit_frame_callgraph(current_record, NULL TSRMLS_CC);
     }
 

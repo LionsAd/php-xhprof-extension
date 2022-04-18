@@ -107,6 +107,7 @@ ZEND_BEGIN_MODULE_GLOBALS(tideways_xhprof)
     uint64 record_num;
     uint64 record_length;
     xhprof_record_t *records;
+    uint64 profiler_overhead;
 ZEND_END_MODULE_GLOBALS(tideways_xhprof)
 
 #if defined(__GNUC__) && __GNUC__ >= 4
