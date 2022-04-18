@@ -75,6 +75,7 @@ struct xhprof_frame_t {
 };
 
 struct xhprof_record_t {
+    struct xhprof_frame_t   *previous_frame;        /* ptr to prev entry being profiled */
     zend_string         *function_name;
     zend_string         *class_name;
     uint64              wt_start;           /* start value for wall clock timer */

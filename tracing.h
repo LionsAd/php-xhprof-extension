@@ -155,27 +155,11 @@ zend_always_inline static void tracing_enter_frame_callgraph(xhprof_record_t *cu
     int recurse_level = 0;
 
     current_frame = tracing_fast_alloc_frame(TSRMLS_C);
-    current_frame->class_name = current_record->class_name;
+    // @todo Keep them in sync.
+    memcpy(current_frame, current_record, sizeof(xhprof_record_t));
+
     current_frame->function_name = zend_string_copy(function_name);
     current_frame->previous_frame = TXRG(callgraph_frames);
-    current_frame->recurse_level = 0;
-    current_frame->wt_start = current_record->wt_start;
-
-    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_CPU) {
-        current_frame->cpu_start = current_record->cpu_start;
-    }
-
-    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_PMU) {
-        current_frame->pmu_start = current_record->pmu_start;
-    }
-
-    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_MU) {
-        current_frame->mu_start = current_record->mu_start;
-    }
-
-    current_frame->num_alloc = current_record->num_alloc;
-    current_frame->num_free = current_record->num_free;
-    current_frame->amount_alloc = current_record->amount_alloc;
 
     /* We only need to compute the hash for the function name,
      * that should be "good" enough, we sort into 1024 buckets only anyways */
