@@ -296,7 +296,7 @@ void tracing_request_init(TSRMLS_D)
     TXRG(num_free) = 0;
     TXRG(amount_alloc) = 0;
 
-    TXRG(record_length) = 1000000;
+    TXRG(record_length) = 100000;
     TXRG(records) = NULL;
     TXRG(records) = ecalloc(TXRG(record_length), sizeof(xhprof_record_t));
     //printf("%lu MB\n", TXRG(record_length) * sizeof(xhprof_record_t) / 1024 / 1024);
