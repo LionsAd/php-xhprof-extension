@@ -147,10 +147,10 @@ zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend
     wt_stop = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
 
     if (ret_symbol != NULL) {
-        current_record->wt_start = wt_start;
+        current_record->wt_start = wt_stop;
     }
     else {
-        current_record->wt_start = wt_stop;
+        current_record->wt_start = wt_start;
     }
 
     wt_diff = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor)) - wt_stop;
