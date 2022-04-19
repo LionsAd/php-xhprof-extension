@@ -106,11 +106,12 @@ zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend
 {
     zend_string *function_name;
     xhprof_record_t *current_record;
-    xhprof_record_t start_record, stop_record;
-    uint64_t overhead = 0;
+    uint64_t wt_start, wt_stop, wt_diff;
+
+    // Measure the start of the function.
+    wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
 
     function_name  = (ret_symbol != NULL) ? ret_symbol : tracing_get_function_name(execute_data TSRMLS_CC);
-
     if (function_name == NULL || TXRG(records) == NULL) {
         return 0;
     }
@@ -124,28 +125,37 @@ zend_always_inline static int tracing_record_frame(zend_string *ret_symbol, zend
 
     current_record->class_name = (ret_symbol == NULL) ? tracing_get_class_name(execute_data TSRMLS_CC) : NULL;
     current_record->function_name = function_name;
-    current_record->wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
 
     // Optimize for no flags case.
-    if (TXRG(flags) == 0) {
-        return 1;
+    if (TXRG(flags) != 0) {
+        if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_CPU) {
+            current_record->cpu_start = cpu_timer();
+        }
+
+        if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_PMU) {
+            current_record->pmu_start = zend_memory_peak_usage(0 TSRMLS_CC);
+        }
+
+        if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_MU) {
+            current_record->mu_start = zend_memory_usage(0 TSRMLS_CC);
+        }
+
+        current_record->num_alloc = TXRG(num_alloc);
+        current_record->num_free = TXRG(num_free);
+        current_record->amount_alloc = TXRG(amount_alloc);
+    }
+    wt_stop = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
+
+    if (ret_symbol != NULL) {
+        current_record->wt_start = wt_start;
+    }
+    else {
+        current_record->wt_start = wt_stop;
     }
 
-    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_CPU) {
-        current_record->cpu_start = cpu_timer();
-    }
-
-    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_PMU) {
-        current_record->pmu_start = zend_memory_peak_usage(0 TSRMLS_CC);
-    }
-
-    if (TXRG(flags) & TIDEWAYS_XHPROF_FLAGS_MEMORY_MU) {
-        current_record->mu_start = zend_memory_usage(0 TSRMLS_CC);
-    }
-
-    current_record->num_alloc = TXRG(num_alloc);
-    current_record->num_free = TXRG(num_free);
-    current_record->amount_alloc = TXRG(amount_alloc);
+    wt_diff = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor)) - wt_stop;
+    current_record->overhead = wt_stop - wt_start + 3 * wt_diff;
+    TXRG(profiler_overhead) += current_record->overhead;
 
     return 1;
 }
@@ -191,6 +201,12 @@ zend_always_inline static void tracing_exit_frame_callgraph(xhprof_record_t *exi
     xhprof_frame_t *current_frame = TXRG(callgraph_frames);
     xhprof_frame_t *previous = current_frame->previous_frame;
     zend_long duration = exit_record->wt_start - current_frame->wt_start;
+    uint64_t overhead = (exit_record->overhead + current_frame->overhead);
+    duration -= overhead;
+
+    if (previous) {
+      previous->overhead += overhead;
+    }
 
     zend_ulong key = tracing_callgraph_bucket_key(current_frame);
     unsigned int slot = (unsigned int)key % TIDEWAYS_XHPROF_CALLGRAPH_SLOTS;
@@ -253,7 +269,7 @@ zend_always_inline static void tracing_exit_frame_callgraph(xhprof_record_t *exi
     tracing_fast_free_frame(current_frame TSRMLS_CC);
 }
 
-zend_always_inline static void _tracing_stop_recording(TSRMLS_D)
+zend_always_inline static void tracing_stop_recording(TSRMLS_D)
 {
     uint64_t i = 0;
     xhprof_record_t *current_record;
@@ -269,32 +285,6 @@ zend_always_inline static void _tracing_stop_recording(TSRMLS_D)
     }
     TXRG(record_num) = 0;
 }
-
-zend_always_inline static void tracing_stop_recording(TSRMLS_D)
-{
-    xhprof_frame_t *current_frame;
-    xhprof_record_t start_record, stop_record;
-    uint64_t overhead;
-
-    start_record.wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
-    _tracing_stop_recording();
-    stop_record.wt_start = time_milliseconds(TXRG(clock_source), TXRG(timebase_factor));
-
-    overhead = (stop_record.wt_start - start_record.wt_start);
-
-    TXRG(profiler_overhead) += overhead;
-    //printf("Move: %lu mns, tot = %lu\n", overhead, TXRG(profiler_overhead));
-
-    current_frame = TXRG(callgraph_frames);
-    // Adjust frames still on the callgraph.
-    while (current_frame) {
-        current_frame->wt_start += overhead;
-        current_frame = current_frame->previous_frame;
-    }
-}
-
-
-
 
 zend_always_inline static void tracing_exit_recording(TSRMLS_D)
 {
